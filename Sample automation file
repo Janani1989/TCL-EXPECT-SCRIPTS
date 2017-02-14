@@ -30,13 +30,7 @@
 #
 ##########################################################################################
 
-SOURCE LIBRARY  : HAL_LIB Platform/CHASSIS
-SOURCE LIBRARY  : HAL_LIB COMMON/CommonLib
-SOURCE LIBRARY  : HAL_LIB Storage/parse_functions
-SOURCE LIBRARY  : HAL_LIB Storage/dcbx
-SOURCE LIBRARY  : HAL_LIB Storage/dcb_pfc
-SOURCE LIBRARY  : HAL_LIB Storage/dcb_ets
-SOURCE LIBRARY  : HAL_LIB QoS/QOS
+/* SOURCE LIBRARY FILES ARE REMOVED FOR CONFIDENTIALITY PURPOSES*/
 
 PROCEDURE       :       SECTION_CLEANUP
 
