@@ -1,0 +1,442 @@
+##########################################################################################
+# Test Number   : 127-132,142,143,147
+# Test Label    : dt-10.3.1.7-2-SeNa-ETS-HA-Failover.f10
+# Author        : JANANI JANARDHANAN
+# DATE          : 03-07-2012
+# Purpose       : Verify ETS scheduling on stack link. Check Failover case with
+#		  CASE 1 : Ingress and egress on different units from the failed unit
+#		  CASE 2 : Egress port on the same unit as the failed unit 
+# Network Setup :
+#
+#                       -----------------                           -----------------
+#                       |               |                           |               |
+#                       |               |                           |               |
+#                       |               |     __  ____________      |               |
+#                       |               |                           |               |
+#                       |               |     _______________       |               |
+#                       |     IXIA      |                           |      DUT      |
+#                       |               |     _______________       |               |
+#                       |               |                           |               |
+#                       |               |                           |               |
+#                       |               |                           |               |
+#                       |               |                           |               |
+#                       -----------------                           -----------------
+# Revision number     :  1
+# Revised by          :
+# Date                :
+# Revision note       :
+# Script Revision Details: Last Modified by $Author: $ on $DateTime: $         #
+# Current Revision : $Revision:  $                                             #
+#
+##########################################################################################
+
+SOURCE LIBRARY  : HAL_LIB Platform/CHASSIS
+SOURCE LIBRARY  : HAL_LIB COMMON/CommonLib
+SOURCE LIBRARY  : HAL_LIB Storage/parse_functions
+SOURCE LIBRARY  : HAL_LIB Storage/dcbx
+SOURCE LIBRARY  : HAL_LIB Storage/dcb_pfc
+SOURCE LIBRARY  : HAL_LIB Storage/dcb_ets
+SOURCE LIBRARY  : HAL_LIB QoS/QOS
+
+PROCEDURE       :       SECTION_CLEANUP
+
+LOG             : ################################################################################
+LOG HEADER      : Unconfigure interface Vlan 100
+LOG             : ################################################################################
+
+NAME            : $DUT1(ID)
+COMMAND         : configure terminal
+                  interface vlan 100
+                  no tagged $DUT1(6,INT)
+                  no tagged $DUT1(7,INT)
+                  no tagged $DUT1(8,INT)
+                  exit
+                  no interface vlan 100
+                  end
+                  show vlan
+NORESPONSE      : -REGEXP "100\s+Active"
+
+LOG             : ################################################################################
+LOG HEADER      : UnConfigure service class dot1p on the DUT interfaces
+LOG HEADER      : connected to Ixia & also UnConfigure switchport
+LOG             : ################################################################################
+
+CALL            : UNCONFIG_SERVICE_CLASS_INTERFACE $DUT1(ID) "$DUT1(6,INT)"
+CALL            : UNCONFIG_SERVICE_CLASS_INTERFACE $DUT1(ID) "$DUT1(7,INT)"
+ CALL           : UNCONFIG_SERVICE_CLASS_INTERFACE $DUT1(ID) "$DUT1(8,INT)"
+NAME            : $DUT1(ID)
+COMMAND         : configure terminal
+                  interface $DUT1(6,INT)
+                  no mtu
+                  no switchport
+                  show config
+NORESPONSE      : -REGEXP "switchport"
+NORESPONSE	: -REGEXP "mtu"
+COMMAND         : exit
+
+COMMAND         : interface $DUT1(7,INT)
+                  no switchport
+                  no mtu
+                  show config
+NORESPONSE      : -REGEXP "switchport"
+NORESPONSE      : -REGEXP "mtu"
+COMMAND         : exit
+
+COMMAND         : interface $DUT1(8,INT)
+                  no switchport
+                 no mtu
+                  no dcb-policy output
+                  show config
+NORESPONSE      : -REGEXP "switchport"
+NORESPONSE      : -REGEXP "mtu"
+NORESPONSE      : -REGEXP "dcb-policy output"
+COMMAND         : end
+
+LOG             : ################################################################################
+LOG HEADER      : Disable dcb feature in DUT and unconfigure dcb related commands
+LOG             : ################################################################################
+
+CALL            : UNCONFIGURE_DCB_OUT_POLICY $DUT1(ID) $dcb_out1
+CALL            : UNCONFIGURE_DCB_OUT_POLICY $DUT1(ID) $dcb_out2
+REPEAT START LABEL : FOREACH NUM $pg_arr(pgid_list)
+
+CALL            : UNCONFIGURE_PRIORITY_GROUP $DUT1(ID) $pg_arr($NUM,pg_name)
+CALL            : UNCONFIGURE_QoS_POLICY_OUT $DUT1(ID) $pg_arr($NUM,qospolicyout)
+
+REPEAT END : LABEL
+
+CALL            : DISABLE_DCB $DUT1(ID)
+
+
+PROCEDURE END
+
+CLEANUP PROCEDURE       :       SECTION_CLEANUP
+
+LOG             : ################################################################################
+LOG             : SECTION_SETUP
+LOG             : ################################################################################
+
+EXPECT          :
+                  set STREAM0(MAC_SA) [join $STREAM0(MAC_SA) :]
+                  set STREAM1(MAC_SA) [join $STREAM1(MAC_SA) :]
+                  set STREAM2(MAC_SA) [join $STREAM2(MAC_SA) :]
+                  set p1 $STREAM0(VLAN_PRIORITY)
+                  set p2 $STREAM1(VLAN_PRIORITY)
+
+LOG             : ################################################################################
+LOG STEP 1      : Configure service class dot1p on the DUT interfaces
+                  connected to Ixia & also configure as switchport
+LOG             : ################################################################################
+
+REPEAT START LOOP : 3
+
+NAME            : $DUT1(ID)
+COMMAND         : configure terminal
+                  interface $DUT1(INCR(LOOP,6,1),INT)
+                  switchport
+                  mtu 12000
+		  service-class dynamic dot1p
+                  no shutdown
+                  show config
+RESPONSE        : -REGEXP "switchport"
+RESPONSE        : -REGEXP "no shutdown"
+RESPONSE 	: -REGEXP "mtu 12000"
+RESPONSE	: -REGEXP "service-class dynamic dot1p"
+COMMAND         : exit
+
+REPEAT END : LOOP
+LOG 		:  ################################################################################
+LOG STEP 2      : Tag the switchport interface under Vlan 100
+LOG             : ################################################################################
+
+NAME            : $DUT1(ID)
+COMMAND         : configure terminal
+                              interface vlan 100
+                          tagged $DUT1(6,INT)
+                          tagged $DUT1(7,INT)
+                          tagged $DUT1(8,INT)
+                          no shutdown
+                          end
+
+LOG             : ################################################################################
+LOG STEP 3      :               Enable dcb feature on DUT and configure ETS POLICY
+LOG             : ################################################################################
+
+
+CALL            :       ENABLE_DCB $DUT1(ID)
+
+
+CALL    : CONFIG_PRIORITY_GROUP $DUT1(ID) $pg_arr($NUM,pg_name) $NUM $pg_arr($NUM,priorities)
+
+CALL    : CREATE_QoS_POLICY_OUT_ETS $DUT1(ID) $pg_arr($NUM,qospolicyout) $pg_arr($NUM,bw_weight) $pg_arr($NUM,scheduler)
+
+REPEAT END : LABEL
+
+CALL    : CREATE_DCB_OUTPUT_PROFILE $DUT1(ID) $dcb_out1 on {1 2} pg_arr
+CALL    : CREATE_DCB_OUTPUT_PROFILE $DUT1(ID) $dcb_out2 on {3 4} pg_arr
+
+
+LOG	    :	#################################################################################################
+LOG STEP 4  :       APPLY DCB-OUTPUT POLICY FOR STACK PORTS
+LOG	    : #################################################################################################
+
+NAME 			: 	$DUT1(ID)
+CALL                    :       CHECK_DUAL_RPM $DUT1(ID)
+CALL stackunit_list     :       GET_ONLINE_LC $DUT1(PRI)
+EXPECT                  :       set no_of_stackunits [llength $stackunit_list]
+LOG                     :       Number of Stack Units in the setup : $no_of_stackunits
+COMMAND 		:	config terminal
+				dcb-policy output stack-unit all stack-ports all $dcb_out1
+				end
+				show stack-unit 0 stack-ports all ets details
+
+REPEAT START LABEL      : FOREACH NUM {1 2}
+
+RESPONSE : -REGEXP "$NUM\s+"  AND -REGEXP "$pg_arr($NUM,bw_weight)"
+
+REPEAT END : LABEL
+
+
+LOG		: #############################################################################################
+LOG STEP 5      : CONFIGURE ETS SCHEDULING ON THE EGRESS INTERFACE THAT IS ON A DIFFERENT UNIT FROM THE INGRESS PORTS
+LOG		: ###############################################################################################
+
+NAME            : $DUT1(ID)
+COMMAND         : config terminal
+                  interface $DUT1(8,INT)
+                  dcb-policy output $dcb_out1
+                  end
+                  show interface $DUT1(8,INT) ets detail
+
+REPEAT START LABEL      : FOREACH NUM {1 2}
+
+RESPONSE : -REGEXP "$NUM\s+"  AND -REGEXP "$pg_arr($NUM,bw_weight)"
+
+REPEAT END : LABEL
+
+LOG             : ################################################################################
+LOG STEP  6     : Clearing stats & Initiating traffic for priorities $p1 and $p2
+                  from transmitting side of the Ixia port6 & port7
+LOG             : ################################################################################
+
+NAME            : $MYIXIA
+
+LOG             : ##############################################################################
+LOG STEP 7      : Create streams on PORT6 and PORT7
+LOG             : ##############################################################################
+
+TOOL RESET
+
+TOOL RECEIVE MODE : PORT8 PACKET_GROUP INSERT
+
+TOOL CLEAR STREAM : PORT6
+TOOL CLEAR STREAM : PORT7
+TOOL CLEAR STREAM : PORT8
+
+REPEAT START stream : 3
+
+
+EXPECT             :  set STREAMINCR(stream,0,1)(INSERTION_VAR) INSERTINCR(stream,0,1)
+TOOL CREATE STREAM : PORTINCR(stream,6,1) STREAMINCR(stream,0,1)
+EXPECT		   : puts [ parray STREAMINCR(stream,0,1) ]
+
+REPEAT END : stream
+
+
+TOOL CLEAR STATISTIC    : PORT6
+TOOL CLEAR STATISTIC    : PORT7
+TOOL CLEAR STATISTIC    : PORT8
+
+TOOL TRANSMIT START     : PORT6
+TOOL TRANSMIT START     : PORT7
+TOOL TRANSMIT START     : PORT8
+
+LOG STEP WAIT   : Waiting for 10 secs for the traffic to be sent.
+WAIT            : 10 - SHOW
+
+TOOL TRANSMIT END : PORT8
+
+LOG             : ################################################################################
+LOG STEP 8      : Verify mac address are learnt in the DUT
+LOG             : ################################################################################
+
+NAME            : $DUT1(ID)
+COMMAND         : show mac-address-table
+RESPONSE        : -REGEXP "$STREAM0(VLAN_ID)\s+$STREAM0(MAC_SA)\s+Dynamic\s+$DUT1(6,INT_SHORT)\s+Active"
+RESPONSE        : -REGEXP "$STREAM1(VLAN_ID)\s+$STREAM1(MAC_SA)\s+Dynamic\s+$DUT1(7,INT_SHORT)\s+Active"
+RESPONSE        : -REGEXP "$STREAM2(VLAN_ID)\s+$STREAM2(MAC_SA)\s+Dynamic\s+$DUT1(8,INT_SHORT)\s+Active"
+
+
+LOG             : ################################################################################
+LOG STEP 9      : Verify ETS allocated bandwith traffic for $p1 & $p2
+                  is coming out on the egress side of the DUT that is on a different stack-unit
+LOG             : ################################################################################
+
+NAME 		: 	$MYIXIA
+EXPECT 		:        set rate_port(0) $pg_arr(1,bw_weight)
+                	set rate_port(1) $pg_arr(2,bw_weight) 
+
+CALL 		:  COMPARE_ETS_BANDWIDTHS {PORT6 PORT7} "$p1 $p2" PORT8 "$INSERT0(groupId) $INSERT1(groupId)" rate_port 10
+
+NAME 		: $DUT1(ID)
+COMMAND 	: clear hardware stack-unit 2 unit 0 counters
+
+#################################################################################################
+LOG STEP 10     :       MAKING A FORCE FAILOVER ON THE MASTER -FIRST TIME
+#################################################################################################
+
+CALL            :       cliForceFailover $DUT1(PRI)_console $DUT1(SEC)_console
+
+#################################################################################################
+LOG             :       WAITING FOR THE STANDBY TO TAKE OVER
+#################################################################################################
+
+NAME            :       $DUT1(PRI)
+COMMAND 	:	show interface $DUT1(8,INT) ets detail
+COMMAND		:	show stack-unit 0 stack-ports all ets details	
+
+REPEAT START LABEL      : FOREACH NUM {1 2}
+
+RESPONSE : -REGEXP "$NUM\s+"  AND -REGEXP "$pg_arr($NUM,bw_weight)"
+
+REPEAT END : LABEL
+
+LOG		: ###############################################################################################
+LOG STEP 11 	: CASE 1 : INGRESS AND EGRESS PORTS WERE ON A DIFFERENT UNIT FROM THE PREVIOUS MASTER. NO LOSS IS EXPECTED DUE TO FAILOVER AND ETS SCHEDULING SHOULDN'T HAVE BEEN CHANGED
+LOG		: ###############################################################################################
+
+EXPECT          : set receiving_interface $DUT1(8,INT)
+                  set m [regexp {.*\s+\d+/(\d+)} $receiving_interface - receiving_port]
+
+
+COMMAND 	: 	show hardware stack-unit 2 unit 0 counters | grep xe$receiving_port
+EXPECT	 	: 	regexp "PERQ_BYTE\\($q1\\).xe$receiving_port\\s+:\\s+(\\S+)\\s+.*" $CURRENT(RESPONSE_BUFFER) - Q1TxBytes
+			regexp "PERQ_BYTE\\($q2\\).xe$receiving_port\\s+:\\s+(\\S+)\\s+.*" $CURRENT(RESPONSE_BUFFER) - Q2TxBytes
+
+if { [regexp "UCQ_DROP_BY\\($q1\\).xe$receiving_port\\s+:\\s+(\\S+)\\s+.*" $CURRENT(RESPONSE_BUFFER) line Q1DropBytes] != 1 } {
+set q1 [expr $q1 + 64]
+regexp "UCQ_DROP_BY\\($q1\\).xe$receiving_port\\s+:\\s+(\\S+)\\s+.*" $CURRENT(RESPONSE_BUFFER) line Q1DropBytes
+}
+
+if {[regexp "UCQ_DROP_BY\\($q2\\).xe$receiving_port\\s+:\\s+(\\S+)\\s+.*" $CURRENT(RESPONSE_BUFFER) line Q2DropBytes] != 1} {
+set q2 [expr $q2 + 64]
+regexp "UCQ_DROP_BY\\($q2\\).xe$receiving_port\\s+:\\s+(\\S+)\\s+.*" $CURRENT(RESPONSE_BUFFER) line Q2DropBytes
+}
+
+set Q1TxBytes [format %f [join [split $Q1TxBytes ,] ""]]
+set Q2TxBytes [format %f [join [split $Q2TxBytes ,] ""]]
+set Q1DropBytes [format %f [join [split  $Q1DropBytes ,] ""]]
+set Q2DropBytes [format %f  [join [split $Q2DropBytes ,] ""]]
+
+WHICH CASE : [expr ( ($Q1DropBytes / ( $Q1DropBytes + $Q1TxBytes ) ) * 100)  > 20 ]
+
+CASE : 1
+LOG : FAIL
+LOG  : UNEXPECTED TRAFFIC LOSS DUE TO FAILOVER IN $q1
+GLOBAL : RESULT FAIL
+
+CASE : 0
+LOG : PASS
+LOG  : NO TRAFFIC LOSS CASE FOR $q1 PASSED
+GLOBAL : RESULT PASS
+
+WHICH CASE END
+
+WHICH CASE : [expr ( ($Q2DropBytes / ( $Q2DropBytes + $Q2TxBytes ) ) * 100)  > 20 ]
+
+CASE : 1
+LOG : FAIL
+LOG  : UNEXPECTED TRAFFIC LOSS DUE TO FAILOVER IN $q2
+GLOBAL : RESULT FAIL
+
+CASE : 0
+LOG : PASS
+LOG  : NO TRAFFIC LOSS CASE FOR $q2 PASSED
+GLOBAL : RESULT PASS
+
+WHICH CASE END
+
+NAME  		: $MYIXIA
+CALL 		:  COMPARE_ETS_BANDWIDTHS {PORT6 PORT7} "$p1 $p2" PORT8 "$INSERT0(groupId) $INSERT1(groupId)" rate_port 10
+
+LOG		: ########################################################################################
+LOG STEP 12	: APPLYING A NEW ETS POLICY TO INTERFACE $DUT1(8,INT)
+LOG		: ########################################################################################
+
+NAME : $DUT1(PRI)
+COMMAND : config terminal
+	  interface $DUT1(8,INT)
+	  dcb-policy output $dcb_out2
+	  end
+	  show interface $DUT1(8,INT) ets detail
+
+REPEAT START LABEL      : FOREACH NUM {3 4}
+
+RESPONSE : -REGEXP "$NUM\s+"  AND -REGEXP "$pg_arr($NUM,bw_weight)"
+
+REPEAT END : LABEL
+
+NAME                    : $MYIXIA
+EXPECT :        set rate_port(0) $pg_arr(3,bw_weight)
+                set rate_port(1) $pg_arr(4,bw_weight)
+
+CALL :  COMPARE_ETS_BANDWIDTHS {PORT6 PORT7} "$p1 $p2" PORT8 "$INSERT0(groupId) $INSERT1(groupId)" rate_port 10
+
+
+LOG	      :	######################################################################################
+LOG STEP 13   :       MAKING A FORCE FAILOVER ON THE MASTER - SECOND TIME
+LOG	      :	#######################################################################################
+
+CALL                    :       cliForceFailover $DUT1(PRI)_console $DUT1(SEC)_console
+
+LOG	: #################################################################################################
+LOG STEP 14 :       WAITING FOR THE STANDBY TO TAKE OVER
+LOG	: #################################################################################################
+
+NAME                    :       $DUT1(PRI)
+WAIT                    :       20 -SHOW
+COMMAND                 :       show interface $DUT1(8,INT) ets detail
+REPEAT START LABEL      : FOREACH NUM {3 4}
+
+RESPONSE : -REGEXP "$NUM\s+"  AND -REGEXP "$pg_arr($NUM,bw_weight)"
+
+REPEAT END : LABEL
+
+COMMAND                 :       show stack-unit 0 stack-ports all ets details
+REPEAT START LABEL      : FOREACH NUM {1 2}
+
+RESPONSE : -REGEXP "$NUM\s+"  AND -REGEXP "$pg_arr($NUM,bw_weight)"
+
+REPEAT END : LABEL
+
+
+LOG : #################################################################################################
+LOG STEP 15 : CASE 2 :  EGRESS PORT WAS ON THE SAME UNIT AS PREVIOUS MASTER.ETS SCHEDULING SHOULDN'T HAVE BEEN CHANGED
+LOG : #################################################################################################
+
+NAME                    : $MYIXIA
+CALL :  COMPARE_ETS_BANDWIDTHS {PORT6 PORT7} "$p1 $p2" PORT8 "$INSERT0(groupId) $INSERT1(groupId)" rate_port 10
+
+
+LOG : #################################################################################################
+LOG STEP 16              :       MAKING A FORCE FAILOVER ON THE MASTER -  THIRD TIME
+LOG : #################################################################################################
+
+CALL                    :       cliForceFailover $DUT1(PRI)_console $DUT1(SEC)_console
+
+LOG : #################################################################################################
+LOG STEP 17 		: 	Removing dynamic macs from mac-address-table
+LOG : #################################################################################################
+
+NAME : $DUT1(PRI)
+COMMAND : clear mac-address-table dynamic all
+	 show mac-address-table
+NORESPONSE        : -REGEXP "$STREAM0(VLAN_ID)\s+$STREAM0(MAC_SA)\s+Dynamic\s+$DUT1(6,INT_SHORT)\s+Active"
+NORESPONSE        : -REGEXP "$STREAM1(VLAN_ID)\s+$STREAM1(MAC_SA)\s+Dynamic\s+$DUT1(7,INT_SHORT)\s+Active"
+NORESPONSE        : -REGEXP "$STREAM2(VLAN_ID)\s+$STREAM2(MAC_SA)\s+Dynamic\s+$DUT1(8,INT_SHORT)\s+Active"
+
+LOG : #################################################################################################
+LOG : SECTION_CLEANUP
+LOG : #################################################################################################
+
+CALL : SECTION_CLEANUP
